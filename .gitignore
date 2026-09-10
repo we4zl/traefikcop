@@ -1,0 +1,55 @@
+# Dependencies and generated output
+node_modules/
+test-results/
+playwright-report/
+coverage/
+*.log
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local environment and application state (including alternate common locations)
+.env
+.env.*
+!.env.example
+.data/
+data/
+state.json
+state.json.*
+*.sqlite*
+*.db
+*.db-*
+
+# Credentials, issued certificates, and remote deployment backups
+.ssh/
+ssh/
+secrets/
+certs/
+backups/
+.traefikcop-*/
+.traefikcop-history/
+id_rsa*
+id_ed25519*
+id_ecdsa*
+known_hosts*
+*.known_hosts
+*.trust
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+acme.json*
+cloudflare-token*
+*_api_token*
+*.bak
+*.backup
+
+# Screenshots and diagnostic reports may reveal real hosts
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.har
+*-report.json
