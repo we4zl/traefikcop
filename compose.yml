@@ -4,7 +4,10 @@ services:
     image: traefikcop:local
     build: .
     ports:
-      - "127.0.0.1:3001:3001"
+      - "${TRAEFIKCOP_BIND_ADDRESS:-0.0.0.0}:3001:3001"
+    environment:
+      TRAEFIKCOP_ALLOW_LAN: "${TRAEFIKCOP_ALLOW_LAN:-1}"
+      TRAEFIKCOP_ALLOWED_HOSTS: "${TRAEFIKCOP_ALLOWED_HOSTS:-}"
     volumes:
       - traefikcop-data:/data
     restart: unless-stopped

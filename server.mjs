@@ -1,3 +1,4 @@
+import {createHostPolicy} from './access.mjs';
 import {SSHKeys} from './ssh-keys.mjs';
 import {connectionFacts,planCertificate,applyCertificate,certificateStatus} from './onboarding.mjs';
 import http from 'node:http';
@@ -12,6 +13,7 @@ import { inspectHost, probeHealth, validateHost, keyDirectory, extractRoutes, co
 import {readConfig,editorForm,buildChange,writeConfig,hash,validDomain,document as configDocument} from './editor.mjs';
 
 const scrypt=promisify(scryptCallback), port=Number(process.env.PORT || 3001);
+const hostPolicy=createHostPolicy({port,allowLAN:process.env.TRAEFIKCOP_ALLOW_LAN==='1',extraHosts:process.env.TRAEFIKCOP_ALLOWED_HOSTS||''});
 const dataDir=path.resolve(process.env.TRAEFIKCOP_DATA_DIR || '.data');
 await mkdir(dataDir,{recursive:true,mode:0o700});
 const sshKeys=new SSHKeys(dataDir);await sshKeys.init();configureSSHKeys(sshKeys);
@@ -52,7 +54,7 @@ async function refresh(h){
 function workspace(){
   const routes=db.hosts.flatMap(h=>snapshots.get(h.id)?.routes||[]);
   for(const d of Object.values(db.disabled)){if(db.hosts.some(h=>h.id===d.host)&&!routes.some(r=>r.host===d.host&&r.file===d.file&&r.name===d.name))routes.push({...d.display,enabled:false,health:{status:'unknown',reason:'Application is disabled.'}});}
-  return {hosts:db.hosts.map(h=>({...h,status:'pending',...(snapshots.get(h.id)?.host||{})})),routes:routes.filter(r=>!r.name.startsWith('traefikcop-certificate-')),certificateJobs:db.certificateJobs,resolvers:db.hosts.flatMap(h=>snapshots.get(h.id)?.resolvers||[]),certificates:db.hosts.flatMap(h=>snapshots.get(h.id)?.certificates||[]),certificateErrors:db.hosts.flatMap(h=>snapshots.get(h.id)?.certificateErrors||[]),domains:db.domains,events:db.events,revisions:db.revisions.map(({id,host,name,summary,status,time})=>({id,host,name,summary,status,time})),username:db.admin.username,keyDirectory,live:true};
+  return {hosts:db.hosts.map(h=>({...h,status:'pending',...(snapshots.get(h.id)?.host||{})})),routes:routes.filter(r=>!r.name.startsWith('traefikcop-certificate-')),certificateJobs:db.certificateJobs,resolvers:db.hosts.flatMap(h=>snapshots.get(h.id)?.resolvers||[]),certificates:db.hosts.flatMap(h=>snapshots.get(h.id)?.certificates||[]),certificateErrors:db.hosts.flatMap(h=>snapshots.get(h.id)?.certificateErrors||[]),domains:db.domains,events:db.events,revisions:db.revisions.map(({id,host,name,summary,status,time})=>({id,host,name,summary,status,time})),username:db.admin.username,accessMode:hostPolicy.label,keyDirectory,live:true};
 }
 async function applicationPreview(input){
   const h=db.hosts.find(h=>h.id===input.host);if(!h)throw fail('Host not found.',404);
@@ -109,8 +111,7 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
   // Reject DNS rebinding and cross-origin requests, including initial account setup.
-  const allowedHosts=[`localhost:${port}`,`127.0.0.1:${port}`];
-  if(!allowedHosts.includes(req.headers.host)){json(res,403,{error:'Local access only.'});return;}
+  if(!hostPolicy.allows(req.headers.host)){json(res,403,{error:'Host not allowed. Use the server’s LAN IP or configure TRAEFIKCOP_ALLOWED_HOSTS.'});return;}
   const requestURL=new URL(req.url,`http://${req.headers.host}`);const pathname=requestURL.pathname;
   try{
     if(!pathname.startsWith('/api/')){

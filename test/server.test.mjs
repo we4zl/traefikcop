@@ -1,3 +1,4 @@
+import {request as httpRequest} from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -6,13 +7,19 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {once} from 'node:events';
 
-test('local authentication, session protection, persistence, and host isolation',async()=>{
+for(const lan of [false,true])test((lan?'LAN':'local')+' authentication, session protection, persistence, and host isolation',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'traefikcop-test-'));
-  const port=3319,base=`http://127.0.0.1:${port}`;
-  const child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:String(port),TRAEFIKCOP_DATA_DIR:dir},stdio:['ignore','pipe','pipe']});
+  const port=lan?3326:3319,base=`http://127.0.0.1:${port}`,origin=lan?`http://192.168.1.50:${port}`:base;
+  const child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:String(port),TRAEFIKCOP_DATA_DIR:dir,TRAEFIKCOP_ALLOW_LAN:lan?'1':'0',TRAEFIKCOP_ALLOWED_HOSTS:''},stdio:['ignore','pipe','pipe']});
   try{
     await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw new Error('Test server failed to start');}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Startup timeout')),5000).unref())]);
-    const request=(url,method='GET',data,headers={})=>fetch(base+url,{method,headers:{Origin:base,'Content-Type':'application/json',...headers},...(data===undefined?{}:{body:JSON.stringify(data)})});
+    const request=(url,method='GET',data,headers={})=>new Promise((resolve,reject)=>{
+      const req=httpRequest(base+url,{method,headers:{Host:new URL(origin).host,Origin:origin,'Content-Type':'application/json',...headers}},res=>{
+        let text='';res.setEncoding('utf8');res.on('data',chunk=>text+=chunk);res.on('end',()=>resolve({status:res.statusCode,headers:{get:key=>{const value=res.headers[key.toLowerCase()];return Array.isArray(value)?value.join(', '):value;}},json:async()=>JSON.parse(text)}));
+      });req.on('error',reject);req.end(data===undefined?undefined:JSON.stringify(data));
+    });
+    assert.equal((await request('/api/session','GET',undefined,{Host:`evil.example:${port}`})).status,403);
+    assert.equal((await request('/api/session','GET',undefined,{Host:`192.168.1.50:${port}`})).status,lan?200:403);
     assert.equal((await request('/api/workspace')).status,401);
     assert.equal((await request('/api/ssh/keys')).status,401);
     assert.equal((await request('/api/ssh/keys','POST',{name:'denied'})).status,401);

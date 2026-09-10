@@ -20,17 +20,30 @@ cd traefikcop
 docker compose up -d --build
 ```
 
-The container is named **`traefikcop`** and listens on **port `3001`**. Compose builds the image from this checkout, publishes `127.0.0.1:3001`, checks the app's health, and restarts it unless stopped. No prebuilt registry image is required.
+The container is named **`traefikcop`** and listens on **port `3001`**. Compose builds the image from this checkout, publishes port `3001` on the machine’s network interfaces, checks the app's health, and restarts it unless stopped. No prebuilt registry image is required.
 
-For Docker running on a remote server, forward its localhost port and open `http://localhost:3001` on your computer:
+Open **`http://YOUR_SERVER_LAN_IP:3001`** from a computer on the same trusted network. Compose enables requests addressed to private IPv4 addresses (10.x, 172.16–31.x, 192.168.x) and IPv6 unique-local addresses. Arbitrary DNS names remain blocked to protect against DNS rebinding; use the optional allowlist for a hostname.
 
-```bash
-ssh -N -L 3001:127.0.0.1:3001 deploy@example.test
+To use a hostname, put its browser address in an untracked `.env` file alongside `compose.yml`, then recreate the container:
+
+```dotenv
+TRAEFIKCOP_ALLOWED_HOSTS=traefikcop.example.test:3001
 ```
 
-Replace the example SSH destination with your Docker server. To update, run `git pull` followed by `docker compose up -d --build`. `docker compose down` preserves the named data volume; `docker compose down -v` deletes it.
+Replace the example with your actual hostname. Multiple host:port entries can be separated by commas. Entries contain no scheme, path, or wildcard. Authentication and same-origin/CSRF checks remain required. This deployment serves HTTP for a trusted LAN; public HTTPS/reverse-proxy deployment is not configured.
 
-Open the same localhost URL. The named `traefikcop-data` volume contains the local account, host settings, history, and generated SSH keys. Do not delete this volume when upgrading. This starts an empty workspace; it does not import an existing `.data` directory automatically. If the development server already occupies port 3001, stop it before starting this deployment.
+For localhost-only publishing instead, set `TRAEFIKCOP_BIND_ADDRESS=127.0.0.1` and `TRAEFIKCOP_ALLOW_LAN=0` in `.env` and recreate the container. You can then use SSH port forwarding as before.
+
+To update:
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+`docker compose down` preserves the named data volume; `docker compose down -v` deletes it.
+
+The named `traefikcop-data` volume contains the local account, host settings, history, and generated SSH keys. Do not delete this volume when upgrading. This starts an empty workspace; it does not import an existing `.data` directory automatically. If the development server already occupies port 3001, stop it before starting this deployment.
 
 New workspaces start empty. Create your administrator account and add your first connection under **Hosts**. Existing local accounts and connections stay in the private data directory.
 
@@ -124,7 +137,7 @@ Discovery is bounded to 30 YAML files and 100 containers per host. Health checks
 
 ## Authentication and storage
 
-The local Node server defaults to `127.0.0.1`; the Docker image listens inside its container and Compose publishes only to `127.0.0.1`. The server validates Host and Origin headers, hashes passwords with salted scrypt, uses HttpOnly/SameSite cookies and CSRF tokens, and throttles logins. Sessions expire after eight hours. Public or reverse-proxy deployment is not configured.
+The local Node server defaults to `127.0.0.1`; the Docker image listens inside its container and Compose publishes port 3001 for LAN access. The server validates Host and Origin headers, hashes passwords with salted scrypt, uses HttpOnly/SameSite cookies and CSRF tokens, and throttles logins. Sessions expire after eight hours. Public or reverse-proxy deployment is not configured.
 
 State lives in `.data/state.json` (0600 inside a 0700 directory). It contains the administrator hash, host/domain profiles, disabled application definitions, and full configuration rollback records, which may contain sensitive configuration. Keep it private and back it up. App-managed keys and host-key pins live in `<data directory>/ssh` (0700), with private keys stored as 0600 files. They are not encrypted at rest: protect and securely back up the data directory or Docker volume. Settings → SSH keys displays public keys and fingerprints only. Legacy keys remain in their previous directory until you use “Set up app-managed SSH” in the host details. Neither raw configuration history nor middleware credentials are returned to the browser.
 
@@ -133,6 +146,9 @@ State lives in `.data/state.json` (0600 inside a 0700 directory). It contains th
 | `PORT` | `3001` | Local HTTP port |
 | `TRAEFIKCOP_DATA_DIR` | `.data` | Private state directory |
 | `TRAEFIKCOP_SSH_DIR` | `~/.local/share/traefikcop/ssh` | Legacy SSH key directory |
+| `TRAEFIKCOP_ALLOW_LAN` | `0` (Compose: `1`) | Accept private IP addresses in browser requests |
+| `TRAEFIKCOP_ALLOWED_HOSTS` | empty | Additional exact browser host:port entries |
+| `TRAEFIKCOP_BIND_ADDRESS` | `0.0.0.0` (Compose) | Docker host interface on which to publish port 3001 |
 | `LISTEN_ADDRESS` | `127.0.0.1` | Bind address; Docker image uses `0.0.0.0` internally |
 
 ## Validation
