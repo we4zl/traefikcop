@@ -36,7 +36,7 @@ the repository.
 
 Synthetic test passwords and example values are intentionally present. Test SSH
 keys and certificates are generated at runtime and removed with their temporary
-fixtures. No production credentials or deployment data are published.
+fixtures. No production credentials or private deployment configuration are published.
 
 This is a publication-focused audit, not a guarantee that automated scanners can
 recognize every possible secret or a full application security assessment. Keep
@@ -46,3 +46,7 @@ files to Git.
 ## Follow-up artwork and deployment
 
 The user-supplied Weazl mascot is published as `public/assets/weazlhead.jpg`, matching its actual JPEG encoding. It contains no EXIF data; its ICC metadata is a standard sRGB profile. This reviewed asset has explicit Git and Docker exceptions, while other screenshots remain excluded. The original image bytes are preserved. Compose uses the requested container name and port with a private named data volume.
+
+## README screenshot
+
+The user-supplied overview screenshot is published at `docs/images/overview.png`. Visual review found no hostnames, IP addresses, email addresses, full usernames, or credentials. It shows aggregate dashboard counts and traffic statistics. The PNG contains no embedded metadata or EXIF fields. Its Git exception is limited to that exact path; Docker continues to exclude it.

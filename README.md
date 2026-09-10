@@ -1,5 +1,7 @@
 # TraefikCop
 
+![TraefikCop overview with Weazl branding, host and route counts, and the egress traffic graph](docs/images/overview.png)
+
 A local web application editor for multiple remote Docker Traefik hosts. A Weazl app.
 
 ## Run
@@ -175,4 +177,4 @@ This repository contains application code and synthetic tests only. Runtime stat
 
 All tests use isolated temporary state and example domains. Browser tests generate disposable credentials and certificates; none need access to a personal server. Test screenshots are written to the temporary directory, not the repository.
 
-The reviewed Weazl artwork at `public/assets/weazlhead.jpg` is the sole image exception to the default screenshot exclusions. The supplied file was JPEG-encoded despite its `.png` filename; the published asset uses the correct extension and preserves the original image bytes. Its metadata contains no EXIF fields, only a standard sRGB color profile.
+The reviewed Weazl artwork at `public/assets/weazlhead.jpg` is an explicit exception to the default image exclusions. The reviewed README screenshot at `docs/images/overview.png` is also allowed in Git, and remains excluded from Docker images. The supplied file was JPEG-encoded despite its `.png` filename; the published asset uses the correct extension and preserves the original image bytes. Its metadata contains no EXIF fields, only a standard sRGB color profile.

@@ -56,3 +56,6 @@ screenshots/
 
 # Reviewed product artwork; other images remain private by default.
 !/public/assets/weazlhead.jpg
+
+# Reviewed README screenshot.
+!/docs/images/overview.png
