@@ -6,6 +6,26 @@ const footer=text=>`<p class="form-error" role="alert"></p></div><div class="mod
 const command=(text,id)=>`<pre class="setup-command" id="${id}">${esc(text)}</pre>${action('Copy command','copy',`data-copy="${id}"`)}`;
 function show(title,subtitle,content){clearTimeout(pollTimer);viewGeneration++;ui.modal(title,subtitle,content);}
 function error(e){const out=document.querySelector('#modal .form-error');if(out)out.textContent=e.message;}
+async function copyCommand(button){
+  const source=document.getElementById(button.dataset.copy),text=source.textContent;
+  let copied=false;
+  if(window.isSecureContext&&navigator.clipboard?.writeText){
+    try{await navigator.clipboard.writeText(text);copied=true;}catch{/* Try the user-gesture fallback below. */}
+  }
+  if(!copied){
+    const buffer=document.createElement('textarea'),focused=document.activeElement;
+    buffer.value=text;buffer.className='clipboard-buffer';buffer.tabIndex=-1;buffer.setAttribute('aria-hidden','true');buffer.readOnly=true;
+    // A modal makes elements outside it inert, so the temporary selection must be inside it.
+    (button.closest('dialog')||document.body).append(buffer);
+    try{buffer.focus({preventScroll:true});buffer.select();buffer.setSelectionRange(0,text.length);copied=document.execCommand('copy');}catch{/* Offer manual selection if the browser blocks both methods. */}
+    finally{buffer.remove();if(focused?.isConnected)focused.focus({preventScroll:true});}
+  }
+  let feedback=button.nextElementSibling;
+  if(!feedback?.classList.contains('copy-feedback')){feedback=document.createElement('span');feedback.className='copy-feedback';feedback.setAttribute('role','status');button.after(feedback);}
+  button.textContent=copied?'Copied':'Copy command';
+  feedback.textContent=copied?'Copied to clipboard.':'Automatic copy was blocked. Commands selected — press Ctrl+C (⌘C on Mac).';
+  if(!copied){source.tabIndex=0;source.focus({preventScroll:true});const range=document.createRange();range.selectNodeContents(source);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);}
+}
 export function setupOnboarding(callbacks){
   ui=callbacks;
   document.addEventListener('submit',async e=>{
@@ -38,7 +58,7 @@ export function setupOnboarding(callbacks){
     const button=e.target.closest('[data-onboard]');if(!button)return;button.disabled=true;
     try{switch(button.dataset.onboard){
       case 'close':document.querySelector('#modal').close();break;
-      case 'copy':await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);button.textContent='Copied';break;
+      case 'copy':await copyCommand(button);break;
       case 'scan':flow.scan=await ui.api('/api/ssh/scan','POST',flow.h);verifyFingerprint();break;
       case 'install':installKey();break;
       case 'retry':await testConnection();break;

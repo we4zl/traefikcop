@@ -9,7 +9,8 @@
     "test": "node --test",
     "test:browser": "node scripts/editor-browser-check.mjs",
     "test:traffic-browser": "node scripts/traffic-browser-check.mjs",
-    "test:onboarding": "node scripts/onboarding-check.mjs"
+    "test:onboarding": "node scripts/onboarding-check.mjs",
+    "test:clipboard-browser": "node scripts/clipboard-browser-check.mjs"
   },
   "engines": {
     "node": ">=22.13.0"

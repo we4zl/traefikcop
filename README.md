@@ -66,6 +66,8 @@ Review the changes before applying:
 
 The certificate request runs on the server after the dialog closes. **Certificates → Certificate requests** shows progress and lets you check again. “Waiting” means the configuration was installed but a matching, in-date Let’s Encrypt certificate has not yet been observed. “Ready” requires observing domain coverage, including wildcard coverage when requested. This does not verify the full public trust chain. Checks use the host loopback HTTPS port, so unusual Docker port mappings can prevent detection. DNS validation can take several minutes; persistent waiting requires checking Traefik's ACME logs, nameservers and token permissions.
 
+The command copy buttons support HTTP LAN pages as well as secure browser contexts. If the browser blocks automatic copying, the command is selected and the UI prompts you to press Ctrl+C (⌘C on Mac).
+
 Traefik retains a reserved `traefikcop-certificate-…` router using `noop@internal`, a low-priority path match, and explicit TLS domains. These setup routers are omitted from the application list. They initiate issuance and remain configured for renewal. They do not proxy to a backend application. Traefik manages automatic renewal; there is no force-renew button ([Traefik ACME documentation](https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/acme/)).
 
 The Cloudflare token is sent over SSH via stdin and saved in a 0600 file on the remote host, referenced with `CF_DNS_API_TOKEN_FILE`. It is held only in the app's temporary review/job memory and is not written into the local state database or returned by APIs. Traefik reads that file for future renewals. Back up the remote deployment and ACME directory too.
@@ -161,6 +163,8 @@ node scripts/editor-browser-check.mjs
 node scripts/onboarding-check.mjs
 # Traffic and certificate UI test uses a disposable container and generated test certificate:
 node scripts/traffic-browser-check.mjs
+# Real clipboard contents over HTTP, secure contexts, and blocked-permission fallback:
+node scripts/clipboard-browser-check.mjs
 ```
 
 The browser integration check creates an isolated local Traefik container and temporary user database. It exercises real file writes and runtime reloads for add, edit, disable, enable, delete, and rollback. No production config or account is changed. Test ACME points to a deliberately unusable local endpoint; no public certificate requests are made.
