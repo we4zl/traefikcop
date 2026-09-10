@@ -104,7 +104,7 @@ async function restoreRevision(id){
   return {id:previewId,summary:'Restore before: '+revision.summary,host:h.name,notice:'This restores the configuration file and this application’s enabled state. It is blocked if newer or external edits exist.'};
 }
 
-const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']],['/traffic.js',['traffic.js','text/javascript; charset=utf-8']],['/onboarding.js',['onboarding.js','text/javascript; charset=utf-8']]]);
+const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']],['/assets/weazlhead.jpg',['assets/weazlhead.jpg','image/jpeg']],['/traffic.js',['traffic.js','text/javascript; charset=utf-8']],['/onboarding.js',['onboarding.js','text/javascript; charset=utf-8']]]);
 const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");

@@ -42,3 +42,7 @@ This is a publication-focused audit, not a guarantee that automated scanners can
 recognize every possible secret or a full application security assessment. Keep
 custom data/key directories outside the checkout and never force-add runtime
 files to Git.
+
+## Follow-up artwork and deployment
+
+The user-supplied Weazl mascot is published as `public/assets/weazlhead.jpg`, matching its actual JPEG encoding. It contains no EXIF data; its ICC metadata is a standard sRGB profile. This reviewed asset has explicit Git and Docker exceptions, while other screenshots remain excluded. The original image bytes are preserved. Compose uses the requested container name and port with a private named data volume.

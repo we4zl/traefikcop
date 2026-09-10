@@ -1,6 +1,6 @@
 # TraefikCop
 
-A local web application editor for multiple remote Docker Traefik hosts.
+A local web application editor for multiple remote Docker Traefik hosts. A Weazl app.
 
 ## Run
 
@@ -12,11 +12,23 @@ npm start
 
 Open http://localhost:3001. Create a local administrator account on first use (minimum 12-character password). Existing accounts survive upgrades; a server restart signs out existing sessions.
 
-For a portable Docker installation (no local Node or SSH directory required):
+For a portable Docker installation (Docker Engine and the Compose plugin required; no local Node or SSH directory needed):
 
 ```bash
+git clone https://github.com/bprendie/traefikcop.git
+cd traefikcop
 docker compose up -d --build
 ```
+
+The container is named **`traefikcop`** and listens on **port `3001`**. Compose builds the image from this checkout, publishes `127.0.0.1:3001`, checks the app's health, and restarts it unless stopped. No prebuilt registry image is required.
+
+For Docker running on a remote server, forward its localhost port and open `http://localhost:3001` on your computer:
+
+```bash
+ssh -N -L 3001:127.0.0.1:3001 deploy@example.test
+```
+
+Replace the example SSH destination with your Docker server. To update, run `git pull` followed by `docker compose up -d --build`. `docker compose down` preserves the named data volume; `docker compose down -v` deletes it.
 
 Open the same localhost URL. The named `traefikcop-data` volume contains the local account, host settings, history, and generated SSH keys. Do not delete this volume when upgrading. This starts an empty workspace; it does not import an existing `.data` directory automatically. If the development server already occupies port 3001, stop it before starting this deployment.
 
@@ -142,3 +154,5 @@ The browser integration check creates an isolated local Traefik container and te
 This repository contains application code and synthetic tests only. Runtime state, SSH keys, Cloudflare tokens, ACME accounts, certificates, configuration backups, logs, and screenshots are excluded from Git and Docker build contexts. Keep custom `TRAEFIKCOP_DATA_DIR` and `TRAEFIKCOP_SSH_DIR` locations outside your checkout. Never force-add runtime files to Git.
 
 All tests use isolated temporary state and example domains. Browser tests generate disposable credentials and certificates; none need access to a personal server. Test screenshots are written to the temporary directory, not the repository.
+
+The reviewed Weazl artwork at `public/assets/weazlhead.jpg` is the sole image exception to the default screenshot exclusions. The supplied file was JPEG-encoded despite its `.png` filename; the published asset uses the correct extension and preserves the original image bytes. Its metadata contains no EXIF fields, only a standard sRGB color profile.

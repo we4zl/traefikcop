@@ -48,3 +48,5 @@ scripts/*-check.mjs
 playwright-report
 test-results
 coverage
+# Reviewed product artwork.
+!public/assets/weazlhead.jpg
