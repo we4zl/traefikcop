@@ -76,8 +76,9 @@ The Cloudflare token is sent over SSH via stdin and saved in a 0600 file on the 
 
 ## Publish and edit applications
 
-1. Complete certificate setup above, which creates the domain profile automatically. Alternatively, use **Domains → Add domain** to bind a profile to an existing resolver without requesting a certificate immediately.
-2. Under **Applications → Add application**, enter name/subdomain, domain, internal address, and backend port. Enable **HTTPS backend** only when the internal application uses HTTPS.
+1. Connect a host with a watched YAML file provider. A saved domain profile is optional; certificate setup above creates one automatically.
+2. Under **Applications → Add application**, enter **App name**, **External FQDN**, **Internal FQDN / IP**, and **Port**. For example: `Photo library`, `photos.example.com`, `photos.internal`, `2283`. Under **Backend connection**, enable **HTTPS backend** only when the internal application uses HTTPS.
+   The app uses a matching domain profile when available, otherwise the host’s existing HTTPS entry point and unambiguous certificate resolver (or certificate store). HTTP-only hosts use HTTP. Review shows the selected settings; DNS and certificate coverage must support the external hostname. Existing applications keep their name, TLS settings, and middleware when you edit their hostname or backend.
 3. Review the public hostname and destination, then apply the change.
 
 New applications use HTTPS and the selected certificate resolver automatically. Wildcard profiles request the domain and `*.domain` certificate through Traefik when a route is published. DNS records must already point to the correct host. A configured resolver does not prove that its credentials or certificate issuance work.

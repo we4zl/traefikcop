@@ -5,13 +5,13 @@ import {promisify} from 'node:util';
 import {mkdtemp,writeFile,readFile,stat,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {document,hash,buildChange,editorForm} from '../editor.mjs';
+import {document,hash,buildChange,editorForm,domainForHostname} from '../editor.mjs';
 const exec=promisify(execFile);
 const initial=`# Keep this comment\nhttp:\n  routers:\n    old:\n      rule: Host(\`old.example.com\`)\n      service: shared\n      entryPoints: [https]\n      middlewares: [auth, headers]\n      tls: {}\n    other:\n      rule: Host(\`other.example.com\`)\n      service: shared\n  services:\n    shared:\n      loadBalancer:\n        passHostHeader: true\n        serversTransport: private\n        servers: [{url: 'https://backend:8000/path'}]\n  middlewares:\n    auth: {basicAuth: {users: ['sensitive-hash']}}\ntcp: {routers: {}}\n`;
 const bundle=text=>({text,doc:document(text),version:hash(text),file:'/config.yml',path:'/tmp/config.yml',config:{entryPoints:{https:{address:':443'}},certificatesResolvers:{cloudflare:{acme:{dnsChallenge:{provider:'cloudflare'}}}}}});
 const domain={name:'example.com',resolver:'cloudflare',entrypoint:'https',wildcard:true};
 test('editing preserves middleware, TLS, shared services, paths, and unrelated config',()=>{
-  const b=bundle(initial),input={version:b.version,routeName:'old',name:'renamed',domain:'example.com',address:'newbackend',port:9000,backendHTTPS:false};
+  const b=bundle(initial),input={version:b.version,routeName:'old',name:'old',hostname:'renamed.example.com',address:'newbackend',port:9000,backendHTTPS:false};
   const result=buildChange(b,input);
   const before=b.doc.toJS(),after=document(result.content).toJS();
   assert.deepEqual(after.http.middlewares,before.http.middlewares);
@@ -72,4 +72,48 @@ test('disabling the last router omits empty maps that Traefik rejects',()=>{
   const result=buildChange(b,{routeName:'only',version:b.version,action:'disable'});
   assert.equal(document(result.content).toJS().http.routers,undefined);
   assert.ok(document(result.content).toJS().http.services.backend);
+});
+
+const formInput=b=>({version:b.version,name:'Photo library',hostname:'gallery.example.com',address:'photos.internal',port:2283});
+test('four-field app creation works without domain profiles and keeps name independent',()=>{
+  const b=bundle(initial),r=buildChange(b,formInput(b)),config=document(r.content).toJS(),router=config.http.routers['Photo library'];
+  assert.equal(router.rule,'Host(`gallery.example.com`)');
+  assert.equal(router.tls.certResolver,'cloudflare');
+  assert.equal(config.http.services[router.service].loadBalancer.servers[0].url,'http://photos.internal:2283/');
+  assert.match(r.notice,/HTTPS/);
+  const updated=bundle(r.content),edited=buildChange(updated,{...formInput(updated),routeName:r.name,hostname:'pictures.example.com',port:9000});
+  assert.equal(document(edited.content).toJS().http.routers[r.name].rule,'Host(`pictures.example.com`)');
+});
+test('domain matching uses the longest complete suffix and wildcard scope',()=>{
+  const nested={...domain,name:'private.example.com'};
+  assert.equal(domainForHostname([domain,nested],'photos.private.example.com'),nested);
+  assert.equal(domainForHostname([domain],'notexample.com'),undefined);
+  const b=bundle(initial);
+  for(const hostname of ['example.com','photos.example.com','photos.private.example.com']){
+    const r=buildChange(b,{...formInput(b),hostname},{domain});
+    const tls=document(r.content).toJS().http.routers['Photo library'].tls;
+    assert.equal(Boolean(tls.domains),hostname!=='photos.private.example.com');
+  }
+});
+test('existing certificate store, ambiguous resolvers, inherited resolver and HTTP-only hosts',()=>{
+  const b=bundle(initial);delete b.config.certificatesResolvers;
+  let router=()=>document(buildChange(b,formInput(b)).content).toJS().http.routers['Photo library'];
+  assert.deepEqual(router().tls,{});
+  b.config.certificatesResolvers={first:{acme:{}},second:{acme:{}}};
+  assert.deepEqual(router().tls,{});
+  b.config.entryPoints.https.http={tls:{certResolver:'second'}};
+  assert.equal(router().tls.certResolver,'second');
+  b.config.entryPoints={web:{address:':80'}};
+  const change=buildChange(b,formInput(b));
+  assert.equal(document(change.content).toJS().http.routers['Photo library'].tls,undefined);
+  assert.match(change.notice,/Public HTTP/);assert.equal(editorForm(b).tls,false);
+});
+test('four-field validation rejects invalid names, external addresses and collisions',()=>{
+  const b=bundle(initial),input=formInput(b);
+  for(const hostname of ['https://photos.example.com','*.example.com','10.0.0.1','example.com:443'])assert.throws(()=>buildChange(b,{...input,hostname}),/FQDN/);
+  for(const name of ['', 'name@file','traefikcop-certificate-abc'])assert.throws(()=>buildChange(b,{...input,name}),/App name/);
+  assert.throws(()=>buildChange(b,{...input,name:'old'}),/already exists/);
+  assert.throws(()=>buildChange(b,input,{allRoutes:[{domains:[input.hostname]}]}),/already uses/);
+  assert.throws(()=>buildChange(b,{...input,port:65536}),/port/);
+  assert.throws(()=>buildChange(b,{...input,routeName:'old'}),/name cannot be changed/);
 });

@@ -10,7 +10,7 @@ import path from 'node:path';
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { inspectHost, probeHealth, validateHost, keyDirectory, extractRoutes, configureSSHKeys } from './remote.mjs';
-import {readConfig,editorForm,buildChange,writeConfig,hash,validDomain,document as configDocument} from './editor.mjs';
+import {readConfig,editorForm,buildChange,writeConfig,hash,validDomain,domainForHostname,document as configDocument} from './editor.mjs';
 
 const scrypt=promisify(scryptCallback), port=Number(process.env.PORT || 3001);
 const hostPolicy=createHostPolicy({port,allowLAN:process.env.TRAEFIKCOP_ALLOW_LAN==='1',extraHosts:process.env.TRAEFIKCOP_ALLOWED_HOSTS||''});
@@ -63,12 +63,12 @@ async function applicationPreview(input){
   const key=disabledKey(h.id,bundle.file,input.routeName||'');
   const disabled=db.disabled[key];
   const current=await inspectHost(h);
-  const change=buildChange(bundle,input,{disabled,domain:db.domains.find(d=>d.host===h.id&&d.name===input.domain),allRoutes:current.routes});
+  const change=buildChange(bundle,input,{disabled,domain:domainForHostname(db.domains.filter(d=>d.host===h.id),String(input.hostname??input.domain??'').trim().toLowerCase().replace(/\.$/,'')),allRoutes:current.routes});
   const id=token();
   for(const [k,p] of previews)if(p.expires<Date.now())previews.delete(k);
   if(previews.size>100)throw fail('Too many pending previews. Try again later.',429);
   previews.set(id,{h,bundle,change,input,expires:Date.now()+10*60000});
-  return {id,summary:change.summary,host:h.name,application:change.name,action:change.action,enabled:!change.disabled,notice:'Saving updates the remote configuration file. Traefik watches it for reloads. Existing middleware is preserved; a backup and rollback revision are saved.'};
+  return {id,summary:change.summary,host:h.name,application:change.name,action:change.action,enabled:!change.disabled,notice:(change.notice?change.notice+' ':'')+'Saving updates the remote configuration file. Traefik watches it for reloads. Existing middleware is preserved; a backup and rollback revision are saved.'};
 }
 async function applyPreview(id){
   const preview=previews.get(id);if(!preview||preview.expires<Date.now())throw fail('Preview expired. Review the form again.',409);

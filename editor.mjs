@@ -1,3 +1,4 @@
+import {isIP} from 'node:net';
 import {createHash,randomBytes} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -29,6 +30,37 @@ export async function readConfig(h,file,run=ssh){
   const doc=document(text);
   return {text,doc,config,file:target,path:remotePath,version:hash(text)};
 }
+function defaultEntryPoint(bundle){
+  const entries=Object.entries(bundle.config.entryPoints||{}).filter(([,e])=>!e.address?.endsWith('/udp'));
+  const routers=Object.values(bundle.doc.toJS().http?.routers||{});
+  const secure=entries.find(([,e])=>/:443(?:\/tcp)?$/.test(e.address||''))||entries.find(([n,e])=>['https','websecure'].includes(n)||e.http?.tls)||entries.find(([n])=>routers.some(r=>r.tls!==undefined&&r.tls!==false&&r.entryPoints?.includes(n)));
+  if(secure)return {name:secure[0],tls:true};
+  const plain=entries.find(([,e])=>/:80(?:\/tcp)?$/.test(e.address||''))||entries.find(([n])=>['http','web'].includes(n))||entries.find(([n])=>routers.some(r=>r.tls===undefined&&r.entryPoints?.includes(n)));
+  if(plain)return {name:plain[0],tls:false};
+  throw problem('No HTTP or HTTPS entry point was found in this host’s configuration.');
+}
+export function domainForHostname(domains,hostname){
+  return domains.filter(d=>hostname===d.name||hostname.endsWith('.'+d.name)).sort((a,b)=>b.name.length-a.name.length)[0];
+}
+function newRouteSettings(bundle,domain,hostname){
+  const entry=domain?{name:domain.entrypoint,tls:true}:defaultEntryPoint(bundle);
+  if(!bundle.config.entryPoints?.[entry.name])throw problem('The domain HTTPS entry point is not configured on this host.');
+  if(!entry.tls)return {settings:{entryPoints:[entry.name]},notice:'Public HTTP on '+entry.name+'. No HTTPS entry point was discovered.'};
+  const resolvers=bundle.config.certificatesResolvers||{},inherited=bundle.config.entryPoints[entry.name].http?.tls?.certResolver;
+  const available=Object.entries(resolvers).filter(([,r])=>r.acme&&!r.acme.caServer?.includes('staging')).map(([name])=>name);
+  const resolver=domain?.resolver||inherited||(available.length===1?available[0]:'');
+  const tls={};
+  if(resolver){
+    const acme=resolvers[resolver]?.acme;if(!acme)throw problem('The domain certificate resolver is not configured on this host.');
+    tls.certResolver=resolver;
+    if(domain?.wildcard){
+      if(!acme.dnsChallenge)throw problem('Wildcard certificates require a DNS certificate resolver.');
+      const prefix=hostname===domain.name?'':hostname.slice(0,-domain.name.length-1);
+      if(!prefix.includes('.'))tls.domains=[{main:domain.name,sans:['*.'+domain.name]}];
+    }
+  }
+  return {settings:{entryPoints:[entry.name],tls},notice:resolver?'HTTPS on '+entry.name+' using certificate resolver '+resolver+'. Certificate issuance and DNS must be working for this hostname.':'HTTPS on '+entry.name+' using Traefik’s certificate store. No resolver was selected automatically; ensure a certificate covers this hostname.'};
+}
 export function editorForm(bundle,routeName,disabled){
   const router=routeName ? bundle.doc.getIn(['http','routers',routeName])?.toJSON() || disabled?.router : null;
   if(routeName&&!router)throw problem('Application no longer exists. Refresh and try again.',409);
@@ -40,7 +72,8 @@ export function editorForm(bundle,routeName,disabled){
   if(router&&(!servers||servers.length!==1))throw problem('This application uses a shared provider or multiple backends. The simple form supports one backend URL.');
   let address='',port=80,backendHTTPS=false;
   if(servers){const u=new URL(servers[0].url);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)throw problem('This backend URL has advanced options and cannot be edited with the simple form.');address=u.hostname.replace(/^\[|\]$/g,'');port=Number(u.port||(u.protocol==='https:'?443:80));backendHTTPS=u.protocol==='https:';}
-  return {routeName:routeName||'',hostname:match?.[1]||'',address,port,backendHTTPS,entrypoint:router?.entryPoints?.[0]||Object.entries(bundle.config.entryPoints||{}).find(([,v])=>v.address===':443')?.[0]||'',resolver:router?.tls?.certResolver||'',tls:router?router.tls!==undefined:true,middlewares:router?.middlewares||[],enabled:!disabled,version:bundle.version,file:bundle.file};
+  const entry=router?{name:router.entryPoints?.[0]||'',tls:router.tls!==undefined&&router.tls!==false}:defaultEntryPoint(bundle);
+  return {routeName:routeName||'',hostname:match?.[1]||'',address,port,backendHTTPS,entrypoint:entry.name,resolver:router?.tls?.certResolver||'',tls:entry.tls,middlewares:router?.middlewares||[],enabled:!disabled,version:bundle.version,file:bundle.file};
 }
 export function buildChange(bundle,input,{disabled,domain,allRoutes=[]}={}){
   const doc=document(bundle.text), before=doc.toJS();
@@ -51,7 +84,7 @@ export function buildChange(bundle,input,{disabled,domain,allRoutes=[]}={}){
   const action=input.action||'save';
   if(!['save','disable','enable','delete'].includes(action))throw problem('Unknown application action.');
   if(action!=='save'&&!old)throw problem('Select an existing application.');
-  let nextDisabled=disabled||null,name=routeName,summary;
+  let nextDisabled=disabled||null,name=routeName,summary,notice;
   if(action==='disable'){
     if(disabled)throw problem('Application is already disabled.');
     nextDisabled={router:old};doc.deleteIn(['http','routers',name]);summary=`Disable ${name}`;
@@ -65,28 +98,27 @@ export function buildChange(bundle,input,{disabled,domain,allRoutes=[]}={}){
     doc.deleteIn(['http','routers',name]);nextDisabled=null;summary=`Delete ${name}`;
   }else{
     if(old)editorForm(bundle,name,disabled);
-    const subdomain=String(input.name||'').trim().toLowerCase(),base=String(input.domain||'').trim().toLowerCase();
-    const hostname=subdomain?`${subdomain}.${base}`:base;
-    if(!validDomain(hostname)||!validDomain(base)||subdomain.split('.').some(p=>p&&!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(p)))throw problem('Enter a valid name and domain.');
+    // Accept the former name/subdomain + domain payload for existing API clients.
+    const fullHostname=input.hostname!==undefined;
+    const base=String(input.domain||'').trim().toLowerCase(),subdomain=String(input.name||'').trim().toLowerCase();
+    const hostname=(fullHostname?String(input.hostname).trim().toLowerCase():(subdomain?subdomain+'.'+base:base)).replace(/\.$/,'');
+    if(!validDomain(hostname)||isIP(hostname))throw problem('Enter a valid external FQDN, without a URL, path, wildcard, or port.');
+    const appName=fullHostname?String(input.name||'').trim():(subdomain.replaceAll('.','-')||base.replaceAll('.','-'));
+    if(fullHostname&&!old&&(!/^[a-zA-Z0-9][a-zA-Z0-9 _.-]{0,79}$/.test(appName)||appName.startsWith('traefikcop-certificate-')))throw problem('App name must start with a letter or number and use up to 80 letters, numbers, spaces, dots, underscores, or dashes.');
+    if(old&&fullHostname&&appName!==routeName)throw problem('An existing application’s name cannot be changed. Its hostname and backend can be edited independently.');
     const address=String(input.address||'').trim();
     if(!address||/[\s/@?#\\]/.test(address)||address.startsWith('-'))throw problem('Enter an internal hostname or IP address, without a URL or port.');
     const port=Number(input.port);if(!Number.isInteger(port)||port<1||port>65535)throw problem('Backend port must be between 1 and 65535.');
     let url;try{url=new URL(`${input.backendHTTPS?'https':'http'}://${address.includes(':')?'['+address.replace(/^\[|\]$/g,'')+']':address}:${port}`);}catch{throw problem('Invalid internal address.');}
     if(allRoutes.some(r=>!(r.source==='file'&&r.file===bundle.file&&r.name===name)&&r.domains.includes(hostname)))throw problem('Another application on this host already uses this hostname.');
-    name=name||subdomain.replaceAll('.','-')||base.replaceAll('.','-');
+    name=name||appName;
     if(!old&&before.http?.routers?.[name])throw problem('An application with this name already exists.');
     const router=structuredClone(old||{});
     router.rule=`Host(\`${hostname}\`)`;
     if(!old){
-      if(!domain||domain.name!==base)throw problem('Configure this domain under Domains first.');
-      if(!bundle.config.entryPoints?.[domain.entrypoint])throw problem('The domain HTTPS entry point is not configured on this host.');
-      const acme=bundle.config.certificatesResolvers?.[domain.resolver]?.acme;
-      if(!acme)throw problem('The domain certificate resolver is not configured on this host.');
-      if(domain.wildcard&&subdomain.includes('.'))throw problem('Wildcard domains support one subdomain level. Use a separate domain profile for nested names.');
-      if(domain.wildcard&&!acme.dnsChallenge)throw problem('Wildcard certificates require a DNS certificate resolver.');
-      router.entryPoints=[domain.entrypoint];router.tls={certResolver:domain.resolver};
-      if(domain.wildcard)router.tls.domains=[{main:base,sans:[`*.${base}`]}];
-    }
+      if(domain&&!(hostname===domain.name||hostname.endsWith('.'+domain.name)))throw problem('The selected domain profile does not match this hostname.');
+      const selected=newRouteSettings(bundle,domain,hostname);Object.assign(router,selected.settings);notice=selected.notice;
+    }else notice='Existing public HTTP/HTTPS settings and middleware are preserved.';
     const originalService=old&&before.http?.services?.[old.service];
     const service=structuredClone(originalService||{loadBalancer:{}});
     const originalURL=originalService?.loadBalancer?.servers?.[0]?.url;
@@ -102,7 +134,7 @@ export function buildChange(bundle,input,{disabled,domain,allRoutes=[]}={}){
   if(doc.getIn(['http','routers'])?.items?.length===0)doc.deleteIn(['http','routers']);
   if(doc.getIn(['http','services'])?.items?.length===0)doc.deleteIn(['http','services']);
   const content=String(doc);document(content);
-  return {content,name,summary,disabled:nextDisabled,previousDisabled:disabled||null,action,changed:hash(content)!==bundle.version};
+  return {content,name,summary,notice,disabled:nextDisabled,previousDisabled:disabled||null,action,changed:hash(content)!==bundle.version};
 }
 export async function writeConfig(h,bundle,content,run=ssh,revision=randomBytes(16).toString('hex')){
   const script=await readFile(new URL('./scripts/write-config.py',import.meta.url),'utf8');
